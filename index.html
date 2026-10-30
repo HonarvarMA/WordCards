@@ -11,6 +11,8 @@
     <script src="https://unpkg.com/docx@7.8.2/build/index.js"></script>
     <!-- FileSaver.js for saving the blob as a file -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <!-- jsPDF library for generating PDF documents directly -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
     <style>
         /* Custom scrollbar for the textarea */
@@ -151,16 +153,28 @@ Gratitude</textarea>
                 <span id="notificationMessage"></span>
             </div>
 
-            <!-- Action Button -->
-            <button 
-                id="generateBtn" 
-                class="mt-1 w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-3.5 px-6 rounded-lg shadow-md transition-all duration-200 flex items-center justify-center gap-2 focus:outline-none focus:ring-4 focus:ring-emerald-300"
-            >
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                  <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd" />
-                </svg>
-                Generate &amp; Download Word Document (.docx)
-            </button>
+            <!-- Action Buttons -->
+            <div class="mt-1 w-full grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button 
+                    id="generateBtn" 
+                    class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-3.5 px-5 rounded-lg shadow-md transition-all duration-200 flex items-center justify-center gap-2 focus:outline-none focus:ring-4 focus:ring-emerald-300"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" viewBox="0 0 20 20" fill="currentColor">
+                      <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd" />
+                    </svg>
+                    <span>Download Word (.docx)</span>
+                </button>
+
+                <button 
+                    id="generatePdfBtn" 
+                    class="w-full bg-teal-700 hover:bg-teal-800 text-white font-semibold py-3.5 px-5 rounded-lg shadow-md transition-all duration-200 flex items-center justify-center gap-2 focus:outline-none focus:ring-4 focus:ring-teal-300"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                    </svg>
+                    <span>Open as PDF (New Tab)</span>
+                </button>
+            </div>
         </div>
 
         <!-- Footer -->
@@ -172,6 +186,7 @@ Gratitude</textarea>
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             const generateBtn = document.getElementById('generateBtn');
+            const generatePdfBtn = document.getElementById('generatePdfBtn');
             const wordInput = document.getElementById('wordInput');
             const pageSizeInput = document.getElementById('pageSize');
             const fontFamilyInput = document.getElementById('fontFamily');
@@ -547,6 +562,175 @@ Gratitude</textarea>
                     // Restore button state
                     generateBtn.innerHTML = originalBtnText;
                     generateBtn.disabled = false;
+                }
+            });
+
+            // Generate and open PDF directly in a new tab
+            generatePdfBtn.addEventListener('click', async () => {
+                const text = wordInput.value;
+                const selectedPageKey = pageSizeInput.value || "LETTER";
+                const pagePreset = PAGE_PRESETS[selectedPageKey] || PAGE_PRESETS.LETTER;
+                const chosenFont = (fontFamilyInput.value || "Arial").trim();
+                const chosenSizePt = parseInt(fontSizeInput.value, 10) || 56;
+                const chosenColorHex = borderColorInput.value || "#2e7d32";
+
+                const words = text.split(/\r?\n/).map(w => w.trim()).filter(w => w.length > 0);
+
+                if (words.length === 0) {
+                    showNotification("Please enter at least one word to generate a PDF.", "error");
+                    return;
+                }
+
+                // Open the blank tab immediately on user click so popup blockers allow it
+                const pdfWindow = window.open('', '_blank');
+
+                const originalPdfBtnText = generatePdfBtn.innerHTML;
+                generatePdfBtn.innerHTML = `
+                    <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Creating PDF...
+                `;
+                generatePdfBtn.disabled = true;
+
+                try {
+                    if (!window.jspdf || !window.jspdf.jsPDF) {
+                        throw new Error("The PDF generation library failed to load. Please check your network connection.");
+                    }
+
+                    const { jsPDF } = window.jspdf;
+                    const formatMap = {
+                        LETTER: 'letter',
+                        A4: 'a4',
+                        LEGAL: 'legal'
+                    };
+
+                    const pdf = new jsPDF({
+                        orientation: 'landscape',
+                        unit: 'px',
+                        format: formatMap[selectedPageKey] || 'letter',
+                        hotfixes: ['px_scaling']
+                    });
+
+                    const pageW = pdf.internal.pageSize.getWidth();
+                    const pageH = pdf.internal.pageSize.getHeight();
+
+                    // Group words into pages of 4 words each
+                    const chunks = [];
+                    for (let i = 0; i < words.length; i += 4) {
+                        chunks.push(words.slice(i, i + 4));
+                    }
+
+                    const scale = 3; // High-DPI rendering for sharp text and frames
+                    const canvas = document.createElement('canvas');
+                    canvas.width = pagePreset.pageWidthPx * scale;
+                    canvas.height = pagePreset.pageHeightPx * scale;
+                    const ctx = canvas.getContext('2d');
+
+                    const marginPx = MARGIN_CM_PX * scale;
+                    const contentW = canvas.width - marginPx * 2;
+                    const contentH = canvas.height - marginPx * 2;
+                    const halfW = contentW / 2;
+                    const halfH = contentH / 2;
+
+                    // Convert pt to canvas pixels (1 pt = 96/72 px)
+                    const fontSizePx = Math.round(chosenSizePt * (96 / 72) * scale);
+
+                    chunks.forEach((chunk, pageIndex) => {
+                        if (pageIndex > 0) {
+                            pdf.addPage(formatMap[selectedPageKey] || 'letter', 'landscape');
+                        }
+
+                        // Fill white page background
+                        ctx.fillStyle = '#FFFFFF';
+                        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                        ctx.save();
+                        ctx.translate(marginPx, marginPx);
+
+                        // 1. Draw dashed outer 1cm trim guide and center cut lines
+                        ctx.save();
+                        ctx.strokeStyle = '#9CA3AF';
+                        ctx.lineWidth = 1.5 * scale;
+                        ctx.setLineDash([8 * scale, 6 * scale]);
+
+                        ctx.strokeRect(1 * scale, 1 * scale, contentW - 2 * scale, contentH - 2 * scale);
+
+                        ctx.beginPath();
+                        ctx.moveTo(halfW, 0);
+                        ctx.lineTo(halfW, contentH);
+                        ctx.stroke();
+
+                        ctx.beginPath();
+                        ctx.moveTo(0, halfH);
+                        ctx.lineTo(contentW, halfH);
+                        ctx.stroke();
+                        ctx.restore();
+
+                        // 2. Draw 4 continuous rounded frames and centered words
+                        const marginX = 26 * scale;
+                        const marginY = 26 * scale;
+                        const radius = 24 * scale;
+                        const frameW = halfW - marginX * 2;
+                        const frameH = halfH - marginY * 2;
+
+                        const quadrants = [
+                            { qx: 0,     qy: 0,     word: chunk[0] || "" },
+                            { qx: halfW, qy: 0,     word: chunk[1] || "" },
+                            { qx: 0,     qy: halfH, word: chunk[2] || "" },
+                            { qx: halfW, qy: halfH, word: chunk[3] || "" }
+                        ];
+
+                        quadrants.forEach(({ qx, qy, word }) => {
+                            // Continuous rounded frame
+                            ctx.save();
+                            ctx.strokeStyle = chosenColorHex;
+                            ctx.lineWidth = 5 * scale;
+                            ctx.setLineDash([]);
+                            ctx.beginPath();
+                            ctx.roundRect(qx + marginX, qy + marginY, frameW, frameH, radius);
+                            ctx.stroke();
+                            ctx.restore();
+
+                            // Centered word (supports both English and RTL scripts natively via browser canvas)
+                            if (word) {
+                                ctx.save();
+                                ctx.fillStyle = '#000000';
+                                ctx.font = `bold ${fontSizePx}px "${chosenFont}", sans-serif`;
+                                ctx.textAlign = 'center';
+                                ctx.textBaseline = 'middle';
+                                const centerX = qx + halfW / 2;
+                                const centerY = qy + halfH / 2;
+                                ctx.fillText(word, centerX, centerY);
+                                ctx.restore();
+                            }
+                        });
+
+                        ctx.restore();
+
+                        const pageDataUrl = canvas.toDataURL('image/jpeg', 0.98);
+                        pdf.addImage(pageDataUrl, 'JPEG', 0, 0, pageW, pageH);
+                    });
+
+                    const pdfBlob = pdf.output('blob');
+                    const pdfUrl = URL.createObjectURL(pdfBlob);
+
+                    if (pdfWindow) {
+                        pdfWindow.location.href = pdfUrl;
+                    } else {
+                        // Fallback if popup was blocked
+                        window.saveAs(pdfBlob, "word_flashcards_4up.pdf");
+                    }
+
+                    showNotification("PDF generated and opened in a new tab!", "success");
+                } catch (error) {
+                    if (pdfWindow) pdfWindow.close();
+                    console.error("Error generating PDF:", error);
+                    showNotification("An error occurred while generating the PDF.", "error");
+                } finally {
+                    generatePdfBtn.innerHTML = originalPdfBtnText;
+                    generatePdfBtn.disabled = false;
                 }
             });
         });
